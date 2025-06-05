@@ -94,5 +94,6 @@ wss.on('connection', ws => {
 setInterval(tick, 33); // плавная анимация
 startRound();
 
-const PORT = 3001;
+// ВАЖНО! Вот так:
+const PORT = process.env.PORT || 3001;
 server.listen(PORT, () => console.log('Crash server started on port', PORT));
