@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <title>Crash Mini App</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <style>
+    :root {
+      --tg-bg: var(--tg-theme-bg-color, #181818);
+      --tg-text: var(--tg-theme-text-color, #fff);
+      --accent: #4e6ef2;
+      --danger: #e74c3c;
+    }
+    body {
+      background: var(--tg-bg);
+      color: var(--tg-text);
+      font-family: 'Segoe UI', Arial, sans-serif;
+      margin: 0;
+      padding: 0;
+      min-height: 100vh;
+      display: flex; flex-direction: column;
+    }
+    .main-container { max-width: 430px; margin: 0 auto; width: 100vw; }
+    .title { font-size: 2.2em; color: var(--accent); text-align: center; margin: 18px 0 8px 0;}
+    .crash-section { background: #232323; border-radius: 18px; margin: 0 12px; padding: 12px 8px; }
+    .crash-graph-wrap { display: flex; min-height: 210px; }
+    .crash-info-panel { min-width: 86px; max-width: 86px; margin-right: 10px; display: flex; flex-direction: column; align-items: center; }
+    .crash-mult { font-size: 2.1em; font-weight: bold; color: var(--accent); line-height: 1.1; margin-bottom: 12px; }
+    .timer-label { font-size: 1.1em; font-weight: bold; color: #e7d44c; margin-bottom: 8px; margin-top: 0px; text-shadow: 0 2px 8px #000a; }
+    .graph-box { flex: 1 1 auto; background: #232323; border-radius: 12px; position: relative; min-height: 190px; margin-left: 0; margin-right: 3px; overflow: hidden;}
+    .crash-svg { width: 100%; height: 190px; display: block; background: linear-gradient(to bottom, #232323 80%, rgba(76,110,242,0.1) 100%);}
+    .crash-labels { position: absolute; right: 7px; top: 18px; font-size: 1em; color: #bbb; text-align: right;}
+    .crash-label { margin-bottom: 32px; display: block;}
+    .crash-explosion { position: absolute; font-size: 2em; font-weight: bold; color: var(--danger); left: 55%; top: 44%; pointer-events: none; text-shadow: 0 0 18px #e74c3cbb, 0 2px 8px #000a; z-index: 2;}
+    .crash-btn-row { display: flex; justify-content: center; margin-top: 10px; margin-bottom: 4px; }
+    .big-btn { background: var(--accent); color: #fff; border: none; border-radius: 11px; font-size: 1.18em; padding: 13px 38px; font-weight: 500; cursor: pointer; transition: background 0.2s; box-shadow: 0 2px 8px #0004; min-width: 145px;}
+    .big-btn:active { background: #3451b2; } .big-btn[disabled] { opacity: 0.5; pointer-events: none;}
+    .history-section { margin: 13px 5px 0 5px; text-align: left; }
+    .history-title { color: #888; font-size: 1em; margin-left: 4px; margin-bottom: 7px; font-weight: 500;}
+    .crash-history { display: flex; flex-direction: row; gap: 5px; overflow-x: auto; padding-bottom: 4px; margin-bottom: 8px; width: 100%; }
+    .history-item { background: #22232c; border-radius: 6px; color: var(--accent); font-weight: bold; font-size: 1.05em; padding: 5px 0; min-width: 0; flex:1; text-align: center; border: 2px solid #2a3865; box-shadow: 0 1px 5px #0003;}
+    @media (max-width: 600px) { .main-container { max-width: 100vw; } }
+    .modal { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.7); display: flex; align-items: center; justify-content: center; z-index: 100;}
+    .modal-content { background: #232323; padding: 28px 18px; border-radius: 12px; text-align: center; min-width: 220px; color: #fff;}
+    .close-btn { background: #e74c3c; color: #fff; border: none; border-radius: 6px; padding: 10px 25px; margin-top: 18px; cursor: pointer;}
+    .close-btn:hover { background: #b33328; }
+  </style>
+</head>
+<body>
+  <div class="main-container">
+    <div class="title">CRASH</div>
+    <div class="crash-section">
+      <div class="crash-graph-wrap">
+        <div class="crash-info-panel">
+          <div class="timer-label" id="timer-label"></div>
+          <div class="crash-mult" id="crash-mult">1.00x</div>
+        </div>
+        <div class="graph-box" style="position:relative;">
+          <svg class="crash-svg" id="crash-svg"></svg>
+          <div class="crash-labels">
+            <div class="crash-label" style="margin-top:40px;">4x</div>
+            <div class="crash-label" style="margin-top:34px;">3x</div>
+            <div class="crash-label" style="margin-top:31px;">2x</div>
+            <div class="crash-label" style="margin-top:32px;">1x</div>
+          </div>
+          <div class="crash-explosion" id="crash-explosion" style="display:none;">💥</div>
+        </div>
+      </div>
+      <div class="crash-btn-row">
+        <button class="big-btn" id="crash-action-btn" disabled>Поставить</button>
+      </div>
+    </div>
+    <div class="history-section">
+      <div class="history-title">Последние игры:</div>
+      <div class="crash-history" id="crash-history"></div>
+    </div>
+  </div>
+  <div id="modal" class="modal" style="display:none;">
+    <div class="modal-content" id="modalContent"></div>
+  </div>
+  <script>
+    Telegram.WebApp.ready();
+    // --- UI ELEMENTS ---
+    const crashMult = document.getElementById('crash-mult');
+    const crashSvg = document.getElementById('crash-svg');
+    const crashExplosion = document.getElementById('crash-explosion');
+    const crashActionBtn = document.getElementById('crash-action-btn');
+    const crashHistoryDiv = document.getElementById('crash-history');
+    const timerLabel = document.getElementById('timer-label');
+    const modal = document.getElementById('modal');
+    const modalContent = document.getElementById('modalContent');
+
+    // --- Modal logic ---
+    function showModal(html) {
+      modalContent.innerHTML = html + '<br><button class="close-btn" onclick="window.closeModal()">Закрыть</button>';
+      modal.style.display = 'flex';
+    }
+    function closeModal() { modal.style.display = 'none'; }
+    window.closeModal = closeModal;
+    modal.onclick = (e) => { if (e.target === modal) closeModal(); };
+
+    // --- WebSocket connection ---
+    let state = null;
+    let userBet = null;
+    let ws = null;
+    connectWS();
+    function connectWS() {
+      ws = new WebSocket("ws://localhost:3001");
+      ws.onopen = () => {};
+      ws.onmessage = (e) => {
+        const data = JSON.parse(e.data);
+        state = data;
+        updateUI();
+      };
+      ws.onclose = () => setTimeout(connectWS, 1000);
+      ws.onerror = () => { ws.close(); };
+    }
+
+    // --- History ---
+    function renderHistory(history) {
+      crashHistoryDiv.innerHTML = "";
+      const len = Math.max(5, history.length);
+      for(let i=0;i<5;i++) {
+        const val = history[i] || '';
+        let d = document.createElement('div');
+        d.className = "history-item";
+        d.innerText = val ? (val.toFixed(2)+'x') : '';
+        d.style.background = val < 2 ? "#32241e" : (val < 3 ? "#223326": "#1b2a3d");
+        d.style.color = val < 2 ? "#e74c3c" : (val < 3 ? "#e7d44c": "#4e6ef2");
+        crashHistoryDiv.appendChild(d);
+      }
+    }
+
+    // --- Crash graph animation ---
+    function renderCrashGraph(multNow, crashedAt, phase) {
+      const width = crashSvg.clientWidth || 220;
+      const height = crashSvg.clientHeight || 170;
+      const leftPad = 12, rightPad = 12, topPad = 20, bottomPad = 24;
+      const w = width - leftPad - rightPad;
+      const h = height - topPad - bottomPad;
+      let N = 18, pts = [];
+      let maxMult = Math.max(multNow, crashedAt || 1);
+      for(let i=0; i<=N; ++i) {
+        let tx = i/N;
+        let tMult = 1 + (maxMult-1)*Math.pow(tx,1.15);
+        let y = h - (h * Math.log(tMult) / Math.log(4.0));
+        y = Math.max(0, Math.min(h, y));
+        let x = leftPad + tx*w;
+        pts.push([x, topPad + y]);
+      }
+      crashSvg.innerHTML = `<polyline fill="none" stroke="#4e6ef2" stroke-width="3" points="${pts.map(p=>p.join(',')).join(' ')}" />
+        <polyline fill="none" stroke="#fff4" stroke-width="1" points="${leftPad},${topPad+h*0.75} ${width-rightPad},${topPad+h*0.75}" />
+        <polyline fill="none" stroke="#fff4" stroke-width="1" points="${leftPad},${topPad+h*0.5} ${width-rightPad},${topPad+h*0.5}" />
+        <polyline fill="none" stroke="#fff4" stroke-width="1" points="${leftPad},${topPad+h*0.25} ${width-rightPad},${topPad+h*0.25}" />`;
+      if (phase === 'crashed') {
+        let crashP = Math.min(1, crashedAt/maxMult);
+        let expX = leftPad + crashP*w;
+        let expY = topPad + h - (h * Math.log(crashedAt) / Math.log(4.0));
+        crashExplosion.style.display = '';
+        crashExplosion.style.left = `${expX-17}px`;
+        crashExplosion.style.top = `${expY-23}px`;
+      } else {
+        crashExplosion.style.display = 'none';
+      }
+    }
+
+    // --- Main UI/game update loop ---
+    function updateUI() {
+      if (!state) return;
+      if (state.phase === "waiting") {
+        timerLabel.innerText = "Следующий раунд через: " + Math.ceil(state.time_left) + " сек";
+        crashMult.innerText = "1.00x";
+        crashActionBtn.innerText = "Поставить";
+        crashActionBtn.disabled = true;
+      } else if (state.phase === "running") {
+        timerLabel.innerText = "Идёт раунд!";
+        crashMult.innerText = state.coefficient.toFixed(2) + "x";
+        crashActionBtn.innerText = userBet && userBet.round === state.round_id && !userBet.taken
+          ? "Забрать"
+          : (userBet && userBet.round === state.round_id ? "Забрано" : "Поставить");
+        crashActionBtn.disabled = !(userBet && userBet.round === state.round_id && !userBet.taken);
+      } else {
+        timerLabel.innerText = "Раунд завершён!";
+        crashMult.innerText = state.crash_at.toFixed(2) + "x";
+        crashActionBtn.innerText = "Поставить";
+        crashActionBtn.disabled = true;
+      }
+      renderCrashGraph(
+        state.phase === "running" ? state.coefficient : (state.phase === "crashed" ? state.crash_at : 1),
+        state.crash_at, state.phase
+      );
+      renderHistory(state.history || []);
+    }
+
+    // --- Betting logic (демо) ---
+    crashActionBtn.onclick = () => {
+      if (!state) return;
+      if (state.phase === "waiting") {
+        showModal("Ставку можно сделать только в начале раунда!");
+      } else if (state.phase === "running") {
+        if (userBet && userBet.round === state.round_id && !userBet.taken) {
+          userBet.taken = true;
+          userBet.value = state.coefficient;
+          showModal("Вы забрали: <b>" + state.coefficient.toFixed(2) + "x</b>");
+        }
+      }
+    };
+
+    setInterval(() => {
+      if (!state) return;
+      if (userBet && userBet.round === state.round_id && !userBet.taken && state.phase === "crashed") {
+        showModal("Не успели забрать! Краш на <b>" + state.crash_at.toFixed(2) + "x</b>");
+        userBet = null;
+      }
+      if (userBet && userBet.round < state.round_id) userBet = null;
+    }, 200);
+
+    // --- Демо: ставить можно только в начале нового running раунда ---
+    setInterval(() => {
+      if (!state) return;
+      if (state.phase === "running" && (!userBet || userBet.round < state.round_id)) {
+        userBet = { round: state.round_id, taken: false, value: null };
+        updateUI();
+      }
+    }, 100);
+
+  </script>
+</body>
+</html>
